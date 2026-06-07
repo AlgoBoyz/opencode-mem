@@ -62,6 +62,34 @@ export function getDatabase(): DatabaseCtor {
         }
         return this.prepare(sql).run(...params);
       }
+      // bun:sqlite and better-sqlite3 expose `db.transaction(fn)` that returns
+      // a callable wrapping `fn` in BEGIN/COMMIT (auto-ROLLBACK on throw).
+      // `node:sqlite`'s DatabaseSync has no equivalent. Used by
+      // `api-handlers.handleAddMemory` and `services/client.addMemory`, so
+      // POST /api/memories and any auto-capture path crash without it.
+      //
+      // Single-mode semantics only (BEGIN); the `.deferred` / `.immediate` /
+      // `.exclusive` variants from better-sqlite3 are not exercised by this
+      // codebase.
+      transaction<Fn extends (...args: unknown[]) => unknown>(fn: Fn): Fn {
+        const self = this;
+        const wrapped = function (this: unknown, ...args: Parameters<Fn>): ReturnType<Fn> {
+          self.exec("BEGIN");
+          try {
+            const result = fn.apply(this, args) as ReturnType<Fn>;
+            self.exec("COMMIT");
+            return result;
+          } catch (err) {
+            try {
+              self.exec("ROLLBACK");
+            } catch {
+              /* rollback failures after partial state are best-effort */
+            }
+            throw err;
+          }
+        };
+        return wrapped as unknown as Fn;
+      }
     }
     Database = DatabaseSyncCompat as unknown as DatabaseCtor;
     return Database;
