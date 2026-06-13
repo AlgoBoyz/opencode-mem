@@ -169,7 +169,13 @@ export class LocalMemoryClient {
       let tagsVector: Float32Array | undefined = undefined;
 
       if (tags.length > 0) {
-        tagsVector = await embeddingService.embedWithTimeout(tags.join(", "));
+        // Wrap tags in a natural-language template before embedding. Bare comma
+        // lists like "react, auth, bug-fix" sit outside the multilingual-e5
+        // training distribution, so the resulting tagsVector drifts toward
+        // unrelated chatter and weakens the 0.4-weight tag boost in
+        // VectorSearch#searchInShard. The "Topics: ..." prefix is a sentence
+        // form e5 was trained on and yields a more discriminative vector.
+        tagsVector = await embeddingService.embedWithTimeout(`Topics: ${tags.join(", ")}`);
       }
 
       const { scope, hash } = extractScopeFromContainerTag(containerTag);

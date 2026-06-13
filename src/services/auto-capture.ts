@@ -83,7 +83,17 @@ export async function performAutoCapture(
       return;
     }
 
-    const result = await memoryClient.addMemory(summaryResult.summary, tags.project.tag, {
+    // Append a "Tags: ..." footer to the summary before persisting. Tags are
+    // already embedded separately into tagsVector, but the contentVector never
+    // sees them. Inlining them here lets the 0.6-weight content channel also
+    // contribute when a query mentions a tag keyword, making recall noticeably
+    // less brittle for precise lookups (e.g. searching for a single API name).
+    const summaryWithTags =
+      summaryResult.tags && summaryResult.tags.length > 0
+        ? `${summaryResult.summary}\n\nTags: ${summaryResult.tags.join(", ")}`
+        : summaryResult.summary;
+
+    const result = await memoryClient.addMemory(summaryWithTags, tags.project.tag, {
       source: "auto-capture" as any,
       type: summaryResult.type as any,
       tags: summaryResult.tags,
