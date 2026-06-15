@@ -60,6 +60,14 @@ export function getDatabase(): DatabaseCtor {
         if (params.length === 0) {
           return this.exec(sql);
         }
+        // bun:sqlite and better-sqlite3 accept a single array of bind values
+        // (`db.run(sql, [a, b])`); node:sqlite's DatabaseSync treats an array as
+        // a named-parameters object and throws `Unknown named parameter '0'`.
+        // Spread it so positional `?` placeholders bind correctly. Callers such
+        // as services/ai/session/ai-session-manager.ts use this array form.
+        if (params.length === 1 && Array.isArray(params[0])) {
+          return this.prepare(sql).run(...(params[0] as unknown[]));
+        }
         return this.prepare(sql).run(...params);
       }
       // bun:sqlite and better-sqlite3 expose `db.transaction(fn)` that returns
