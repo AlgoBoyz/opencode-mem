@@ -14,16 +14,6 @@ const MAX_TOOL_INPUT_LENGTH = 100;
 const RETRY_BASE_DELAY_MS = 2000;
 
 let isCaptureRunning = false;
-let hasLoggedAutoCaptureProviderConfigIssues = false;
-
-function logAutoCaptureProviderConfigIssuesOnce(issues: string[]): void {
-  if (hasLoggedAutoCaptureProviderConfigIssues) return;
-
-  log(
-    `Auto-capture skipped: configure opencodeProvider/opencodeModel or manual memory API settings. Issues: ${issues.join("; ")}.`
-  );
-  hasLoggedAutoCaptureProviderConfigIssues = true;
-}
 
 export async function performAutoCapture(
   ctx: PluginInput,
@@ -44,7 +34,6 @@ export async function performAutoCapture(
     }
 
     if (!CONFIG.autoCaptureProviderStatus.ready) {
-      logAutoCaptureProviderConfigIssuesOnce(CONFIG.autoCaptureProviderStatus.issues);
       return;
     }
 
