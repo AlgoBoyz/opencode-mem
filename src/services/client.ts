@@ -141,6 +141,110 @@ export class LocalMemoryClient {
     }
   }
 
+  async combinedSearch(
+    query: string,
+    containerTag: string,
+    limit: number = 10,
+    scope: MemoryScope = "project"
+  ) {
+    try {
+      await this.initialize();
+
+      const keywords = query
+        .split(",")
+        .map((k) => k.trim())
+        .filter(Boolean);
+      if (keywords.length === 0) {
+        return { success: true as const, results: [], count: 0 };
+      }
+
+      const resolved = resolveScopeValue(scope, containerTag);
+      const shards = shardManager.getAllShards(resolved.scope, resolved.hash);
+      if (shards.length === 0) {
+        return { success: true as const, results: [], count: 0 };
+      }
+
+      const merged = new Map<string, { id: string; overview?: string; tags: string[]; similarity: number; source: string; createdAt: string }>();
+
+      for (const kw of keywords) {
+        const [semanticRes, keywordRes] = await Promise.all([
+          this.searchMemories(kw, containerTag, scope),
+          this.filterMemoriesByKeyword(containerTag, kw, scope),
+        ]);
+
+        if (semanticRes.success) {
+          for (const r of (semanticRes as any).results || []) {
+            const sim = r.similarity || 0;
+            const existing = merged.get(r.id);
+            if (!existing || sim > existing.similarity) {
+              merged.set(r.id, {
+                id: r.id,
+                overview: r.overview,
+                tags: r.tags || [],
+                similarity: sim,
+                source: "semantic",
+                createdAt: r.createdAt || "",
+              });
+            } else if (sim > 0 && existing.source === "keyword") {
+              existing.source = "both";
+            }
+          }
+        }
+
+        if (keywordRes.success) {
+          for (const m of (keywordRes as any).memories || []) {
+            const existing = merged.get(m.id);
+            if (existing) {
+              if (existing.source === "semantic") existing.source = "both";
+              if (!existing.overview) existing.overview = m.overview;
+              if (!existing.tags.length) existing.tags = m.tags;
+              if (!existing.createdAt) existing.createdAt = m.createdAt;
+            } else {
+              merged.set(m.id, {
+                id: m.id,
+                overview: m.overview,
+                tags: m.tags || [],
+                similarity: 0,
+                source: "keyword",
+                createdAt: m.createdAt || "",
+              });
+            }
+          }
+        }
+      }
+
+      // Enrich semantic-only results with overview and createdAt from DB
+      const enrichIds = Array.from(merged.entries())
+        .filter(([, v]) => !v.overview || !v.createdAt)
+        .map(([id]) => id);
+
+      if (enrichIds.length > 0) {
+        for (const shard of shards) {
+          const db = connectionManager.getConnection(shard.dbPath);
+          for (const eid of enrichIds) {
+            const entry = merged.get(eid);
+            if (!entry || (entry.overview && entry.createdAt)) continue;
+            const row = vectorSearch.getMemoryById(db, eid);
+            if (row) {
+              if (!entry.overview) entry.overview = row.overview || undefined;
+              if (!entry.createdAt) entry.createdAt = safeToISOString(row.created_at);
+            }
+          }
+        }
+      }
+
+      const results = Array.from(merged.values())
+        .sort((a, b) => b.similarity - a.similarity)
+        .slice(0, limit);
+
+      return { success: true as const, results, count: results.length };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log("combinedSearch: error", { error: errorMessage });
+      return { success: false as const, error: errorMessage, results: [], count: 0 };
+    }
+  }
+
   async addMemory(
     content: string,
     containerTag: string,
@@ -153,6 +257,7 @@ export class LocalMemoryClient {
       reasoning?: string;
       captureTimestamp?: number;
       displayName?: string;
+      overview?: string;
       userName?: string;
       userEmail?: string;
       projectPath?: string;
@@ -181,11 +286,12 @@ export class LocalMemoryClient {
       const { scope, hash } = extractScopeFromContainerTag(containerTag);
       const shard = shardManager.getWriteShard(scope, hash);
 
-      const id = `mem_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+      const id = `mem_${Math.floor(Date.now() / 1000)}_${Math.random().toString(36).substring(2, 7)}`;
       const now = Date.now();
 
       const {
         displayName,
+        overview,
         userName,
         userEmail,
         projectPath,
@@ -207,6 +313,7 @@ export class LocalMemoryClient {
         createdAt: now,
         updatedAt: now,
         displayName,
+        overview,
         userName,
         userEmail,
         projectPath,
@@ -223,8 +330,8 @@ export class LocalMemoryClient {
         const insertStmt = db.prepare(`
           INSERT INTO memories (
             id, content, vector, tags_vector, container_tag, tags, type, created_at, updated_at,
-            metadata, display_name, user_name, user_email, project_path, project_name, git_repo_url
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            metadata, display_name, overview, user_name, user_email, project_path, project_name, git_repo_url
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         insertStmt.run(
           record.id,
@@ -238,6 +345,7 @@ export class LocalMemoryClient {
           record.updatedAt,
           record.metadata || null,
           record.displayName || null,
+          record.overview || null,
           record.userName || null,
           record.userEmail || null,
           record.projectPath || null,
@@ -353,6 +461,194 @@ export class LocalMemoryClient {
         memories: [],
         pagination: { currentPage: 1, totalItems: 0, totalPages: 0 },
       };
+    }
+  }
+
+  async listMemoriesByTag(
+    containerTag: string,
+    tag: string,
+    limit = 100,
+    scope: MemoryScope = "project"
+  ) {
+    try {
+      await this.initialize();
+
+      const resolved = resolveScopeValue(scope, containerTag);
+      const shards = shardManager.getAllShards(resolved.scope, resolved.hash);
+
+      if (shards.length === 0) {
+        return {
+          success: true as const,
+          memories: [],
+          pagination: { currentPage: 1, totalItems: 0, totalPages: 0 },
+        };
+      }
+
+      const allMemories: any[] = [];
+
+      for (const shard of shards) {
+        const db = connectionManager.getConnection(shard.dbPath);
+        const memories = vectorSearch.listByTag(
+          db,
+          scope === "all-projects" ? "" : containerTag,
+          tag,
+          limit
+        );
+        allMemories.push(...memories);
+      }
+
+      allMemories.sort((a, b) => Number(b.created_at) - Number(a.created_at));
+
+      const memories = allMemories.slice(0, limit).map((r: any) => ({
+        id: r.id,
+        displayName: r.display_name,
+        overview: r.overview || undefined,
+        tags: r.tags ? r.tags.split(",").map((t: string) => t.trim()) : [],
+        createdAt: safeToISOString(r.created_at),
+      }));
+
+      return {
+        success: true as const,
+        memories,
+        pagination: { currentPage: 1, totalItems: memories.length, totalPages: 1 },
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log("listMemoriesByTag: error", { tag, error: errorMessage });
+      return {
+        success: false as const,
+        error: errorMessage,
+        memories: [],
+        pagination: { currentPage: 1, totalItems: 0, totalPages: 0 },
+      };
+    }
+  }
+
+  async listAllMemories(containerTag: string, scope: MemoryScope = "project") {
+    try {
+      await this.initialize();
+
+      const resolved = resolveScopeValue(scope, containerTag);
+      const shards = shardManager.getAllShards(resolved.scope, resolved.hash);
+
+      if (shards.length === 0) {
+        return {
+          success: true as const,
+          memories: [],
+        };
+      }
+
+      const allMemories: any[] = [];
+
+      for (const shard of shards) {
+        const db = connectionManager.getConnection(shard.dbPath);
+        const memories = vectorSearch.listAll(
+          db,
+          scope === "all-projects" ? "" : containerTag
+        );
+        allMemories.push(...memories);
+      }
+
+      allMemories.sort((a, b) => Number(b.created_at) - Number(a.created_at));
+
+      const memories = allMemories.map((r: any) => ({
+        id: r.id,
+        displayName: r.display_name,
+        overview: r.overview || undefined,
+        tags: r.tags ? r.tags.split(",").map((t: string) => t.trim()) : [],
+        createdAt: safeToISOString(r.created_at),
+      }));
+
+      return {
+        success: true as const,
+        count: memories.length,
+        memories,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log("listAllMemories: error", { error: errorMessage });
+      return {
+        success: false as const,
+        error: errorMessage,
+        memories: [],
+      };
+    }
+  }
+
+  async filterMemoriesByKeyword(
+    containerTag: string,
+    keyword: string,
+    scope: MemoryScope = "project"
+  ) {
+    try {
+      await this.initialize();
+
+      const resolved = resolveScopeValue(scope, containerTag);
+      const shards = shardManager.getAllShards(resolved.scope, resolved.hash);
+
+      if (shards.length === 0) {
+        return { success: true as const, memories: [], count: 0 };
+      }
+
+      const allMemories: any[] = [];
+      for (const shard of shards) {
+        const db = connectionManager.getConnection(shard.dbPath);
+        const memories = vectorSearch.filterByKeyword(
+          db,
+          scope === "all-projects" ? "" : containerTag,
+          keyword
+        );
+        allMemories.push(...memories);
+      }
+
+      allMemories.sort((a, b) => Number(b.created_at) - Number(a.created_at));
+
+      const memories = allMemories.map((r: any) => ({
+        id: r.id,
+        displayName: r.display_name,
+        overview: r.overview || undefined,
+        tags: r.tags ? r.tags.split(",").map((t: string) => t.trim()) : [],
+        createdAt: safeToISOString(r.created_at),
+      }));
+
+      return { success: true as const, count: memories.length, memories };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log("filterMemoriesByKeyword: error", { keyword, error: errorMessage });
+      return { success: false as const, error: errorMessage, memories: [] };
+    }
+  }
+
+  async getMemoryContent(memoryId: string) {
+    try {
+      await this.initialize();
+
+      const allShards = [
+        ...shardManager.getAllShards("project", ""),
+        ...shardManager.getAllShards("user", ""),
+      ];
+
+      for (const shard of allShards) {
+        const db = connectionManager.getConnection(shard.dbPath);
+        const row = vectorSearch.getMemoryById(db, memoryId);
+        if (row) {
+          return {
+            success: true as const,
+            id: row.id,
+            content: row.content,
+            displayName: row.display_name,
+            overview: row.overview || undefined,
+            tags: row.tags ? row.tags.split(",").map((t: string) => t.trim()) : [],
+            createdAt: safeToISOString(row.created_at),
+          };
+        }
+      }
+
+      return { success: false as const, error: "Memory not found" };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log("getMemoryContent: error", { memoryId, error: errorMessage });
+      return { success: false as const, error: errorMessage };
     }
   }
 

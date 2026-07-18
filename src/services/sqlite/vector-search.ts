@@ -33,8 +33,8 @@ export class VectorSearch {
     const insertMemory = db.prepare(`
       INSERT INTO memories (
         id, content, vector, tags_vector, container_tag, tags, type, created_at, updated_at,
-        metadata, display_name, user_name, user_email, project_path, project_name, git_repo_url
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        metadata, display_name, overview, user_name, user_email, project_path, project_name, git_repo_url
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     insertMemory.run(
@@ -49,6 +49,7 @@ export class VectorSearch {
       record.updatedAt,
       record.metadata || null,
       record.displayName || null,
+      record.overview || null,
       record.userName || null,
       record.userEmail || null,
       record.projectPath || null,
@@ -279,9 +280,57 @@ export class VectorSearch {
     return (containerTag === "" ? stmt.all(limit) : stmt.all(containerTag, limit)) as any[];
   }
 
+  listByTag(db: DatabaseType, containerTag: string, tag: string, limit: number): any[] {
+    const tagPattern = `%,${tag},%`;
+    const stmt = db.prepare(
+      containerTag === ""
+        ? `
+      SELECT * FROM memories
+      WHERE ',' || IFNULL(tags, '') || ',' LIKE ?
+      ORDER BY created_at DESC
+      LIMIT ?
+    `
+        : `
+      SELECT * FROM memories
+      WHERE container_tag = ? AND ',' || IFNULL(tags, '') || ',' LIKE ?
+      ORDER BY created_at DESC
+      LIMIT ?
+    `
+    );
+
+    if (containerTag === "") {
+      return stmt.all(tagPattern, limit) as any[];
+    }
+    return stmt.all(containerTag, tagPattern, limit) as any[];
+  }
+
   getAllMemories(db: DatabaseType): any[] {
     const stmt = db.prepare(`SELECT * FROM memories ORDER BY created_at DESC`);
     return stmt.all() as any[];
+  }
+
+  listAll(db: DatabaseType, containerTag: string): any[] {
+    if (containerTag === "") {
+      return this.getAllMemories(db);
+    }
+    const stmt = db.prepare(
+      `SELECT * FROM memories WHERE container_tag = ? ORDER BY created_at DESC`
+    );
+    return stmt.all(containerTag) as any[];
+  }
+
+  filterByKeyword(db: DatabaseType, containerTag: string, keyword: string): any[] {
+    const pattern = `%${keyword}%`;
+    if (containerTag === "") {
+      const stmt = db.prepare(
+        `SELECT * FROM memories WHERE content LIKE ? ORDER BY created_at DESC`
+      );
+      return stmt.all(pattern) as any[];
+    }
+    const stmt = db.prepare(
+      `SELECT * FROM memories WHERE container_tag = ? AND content LIKE ? ORDER BY created_at DESC`
+    );
+    return stmt.all(containerTag, pattern) as any[];
   }
 
   getMemoryById(db: DatabaseType, memoryId: string): any | null {

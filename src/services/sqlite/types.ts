@@ -21,6 +21,7 @@ export interface MemoryRecord {
   updatedAt: number;
   metadata?: string;
   displayName?: string;
+  overview?: string;
   userName?: string;
   userEmail?: string;
   projectPath?: string;
@@ -35,6 +36,7 @@ export interface SearchResult {
   tags?: string[];
   metadata?: Record<string, unknown>;
   displayName?: string;
+  overview?: string;
   userName?: string;
   userEmail?: string;
   projectPath?: string;

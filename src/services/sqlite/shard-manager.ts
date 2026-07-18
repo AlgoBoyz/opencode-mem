@@ -165,6 +165,7 @@ export class ShardManager {
         updated_at INTEGER NOT NULL,
         metadata TEXT,
         display_name TEXT,
+        overview TEXT,
         user_name TEXT,
         user_email TEXT,
         project_path TEXT,

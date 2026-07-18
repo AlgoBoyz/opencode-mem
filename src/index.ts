@@ -18,6 +18,80 @@ import { getLanguageName } from "./services/language-detector.js";
 import type { MemoryScope } from "./services/client.js";
 import { getHostClientConfig } from "./services/ai/opencode-host-config.js";
 import { loadOpencodeProvider } from "./services/ai/opencode-provider-loader.js";
+import { mkdirSync, writeFileSync } from "node:fs";
+
+function generateDisplayName(content: string): string {
+  const lines = content.split("\n").filter((l) => l.trim());
+  for (const line of lines) {
+    const cleaned = line.replace(/^#{1,6}\s*/, "").trim();
+    if (cleaned) return cleaned.substring(0, 80);
+  }
+  return content.substring(0, 80);
+}
+
+function generateOverview(content: string): string {
+  const lines = content.split("\n");
+  const firstLine = lines[0]?.replace(/^#{1,6}\s*/, "").trim() || "";
+  const rest = lines
+    .slice(1)
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith("#") && !l.startsWith("|") && !l.startsWith("-") && !l.startsWith("*"))
+    .join(" ");
+  const overview = [firstLine, rest].filter(Boolean).join(": ");
+  return overview.substring(0, 200) || content.substring(0, 200);
+}
+
+async function generateAIOverview(content: string): Promise<string | null> {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) return null;
+  try {
+    const res = await fetch("https://api.deepseek.com/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "deepseek-v4-flash",
+        messages: [
+          {
+            role: "system",
+            content:
+              "你是一个技术文档摘要助手。用一句中文（不超过30字）简短概括以下内容的核心。只返回概述，不要加任何其他内容。",
+          },
+          { role: "user", content },
+        ],
+        max_tokens: 160,
+        temperature: 0,
+        stream: false,
+        thinking: { type: "disabled" },
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as any;
+    const text = json?.choices?.[0]?.message?.content?.trim();
+    if (!text) return null;
+    return text.substring(0, 60);
+  } catch {
+    return null;
+  }
+}
+
+function wrapLargeOutput(mode: string, obj: any): string {
+  const json = JSON.stringify(obj);
+  if (json.length <= 3000) return json;
+  const ts = Date.now();
+  const file = `/tmp/opencode/mem-${mode}-${ts}.json`;
+  mkdirSync("/tmp/opencode", { recursive: true });
+  writeFileSync(file, json);
+  return JSON.stringify({
+    success: obj.success,
+    count: obj.count ?? (Array.isArray(obj.memories) ? obj.memories.length : undefined) ?? undefined,
+    file,
+    size: json.length,
+  });
+}
 
 export function isStructuredSummaryPromptMessage(userMessage: string): boolean {
   // This is the plugin's own structured-summary request. OpenCode echoes it
@@ -320,7 +394,7 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
       memory: tool({
         description: `Manage and query project memory (MATCH USER LANGUAGE: ${getLanguageName(CONFIG.autoCaptureLanguage || "en")}). Use 'search' with technical keywords/tags, 'add' to store knowledge, 'profile' for preferences. Search/list scope: project or all-projects.`,
         args: {
-          mode: tool.schema.enum(["add", "search", "profile", "list", "forget", "help"]).optional(),
+          mode: tool.schema.enum(["add", "search", "profile", "list", "forget", "help", "filter_by_tag", "list_all", "filter_by_keyword", "pick"]).optional(),
           content: tool.schema.string().optional(),
           query: tool.schema.string().optional(),
           tags: tool.schema.string().optional(),
@@ -330,7 +404,7 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
           scope: tool.schema.enum(["project", "all-projects"]).optional(),
         },
         async execute(args: {
-          mode?: "add" | "search" | "profile" | "list" | "forget" | "help";
+          mode?: "add" | "search" | "profile" | "list" | "forget" | "help" | "filter_by_tag" | "list_all" | "filter_by_keyword" | "pick";
           content?: string;
           query?: string;
           tags?: string;
@@ -378,6 +452,26 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
                       args: ["content?"],
                     },
                     { command: "list", description: "List recent memories", args: ["limit?"] },
+                    {
+                      command: "filter_by_tag",
+                      description: "List memories filtered by a specific tag",
+                      args: ["tag", "limit?"],
+                    },
+                    {
+                      command: "list_all",
+                      description: "List all memories with id, name, overview and tags",
+                      args: ["scope?"],
+                    },
+                    {
+                      command: "filter_by_keyword",
+                      description: "Filter memories whose content contains a keyword",
+                      args: ["query", "scope?"],
+                    },
+                    {
+                      command: "pick",
+                      description: "Retrieve full content of a memory by id",
+                      args: ["memoryId"],
+                    },
                     { command: "forget", description: "Remove memory", args: ["memoryId"] },
                   ],
                   tagGuidance: "Use technical keywords for search. Tags rank highest.",
@@ -396,7 +490,8 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
                 const result = await memoryClient.addMemory(sanitizedContent, tagInfo.tag, {
                   type: args.type,
                   tags: parsedTags,
-                  displayName: tagInfo.displayName,
+                  displayName: generateDisplayName(sanitizedContent),
+                  overview: (await generateAIOverview(sanitizedContent)) || generateOverview(sanitizedContent),
                   userName: tagInfo.userName,
                   userEmail: tagInfo.userEmail,
                   projectPath: tagInfo.projectPath,
@@ -412,14 +507,26 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
 
               case "search":
                 if (!args.query) return JSON.stringify({ success: false, error: "query required" });
-                const searchRes = await memoryClient.searchMemories(
+                const combinedRes = await memoryClient.combinedSearch(
                   args.query,
                   tags.project.tag,
+                  args.limit || 10,
                   args.scope ?? CONFIG.memory.defaultScope
                 );
-                if (!searchRes.success)
-                  return JSON.stringify({ success: false, error: searchRes.error });
-                return formatSearchResults(args.query, searchRes, args.limit);
+                if (!combinedRes.success)
+                  return JSON.stringify({ success: false, error: combinedRes.error });
+                return wrapLargeOutput("search", {
+                  success: true,
+                  query: args.query,
+                  count: combinedRes.count,
+                  results: combinedRes.results?.map((r: any) => ({
+                    id: r.id,
+                    overview: r.overview,
+                    tags: r.tags,
+                    similarity: Math.round(r.similarity * 100),
+                    source: r.source,
+                  })),
+                });
 
               case "profile": {
                 if (args.query) {
@@ -527,15 +634,79 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
                 );
                 if (!listRes.success)
                   return JSON.stringify({ success: false, error: listRes.error });
-                return JSON.stringify({
+                return wrapLargeOutput("list", {
                   success: true,
                   count: listRes.memories?.length,
                   memories: listRes.memories?.map((m: any) => ({
                     id: m.id,
                     content: m.summary,
-                    createdAt: m.createdAt,
                   })),
                 });
+
+              case "filter_by_tag":
+                if (!args.tags)
+                  return JSON.stringify({ success: false, error: "tag required (use 'tags' parameter)" });
+                const byTagRes = await memoryClient.listMemoriesByTag(
+                  tags.project.tag,
+                  args.tags.toLowerCase().trim(),
+                  args.limit || 100,
+                  args.scope ?? CONFIG.memory.defaultScope
+                );
+                if (!byTagRes.success)
+                  return JSON.stringify({ success: false, error: byTagRes.error });
+                return wrapLargeOutput("filter_by_tag", {
+                  success: true,
+                  count: byTagRes.memories?.length,
+                  memories: byTagRes.memories?.map((m: any) => ({
+                    id: m.id,
+                    overview: m.overview,
+                    tags: m.tags,
+                  })),
+
+                });
+
+              case "list_all":
+                const allRes = await memoryClient.listAllMemories(
+                  tags.project.tag,
+                  args.scope ?? CONFIG.memory.defaultScope
+                );
+                if (!allRes.success)
+                  return JSON.stringify({ success: false, error: allRes.error });
+                return wrapLargeOutput("list_all", {
+                  success: true,
+                  count: allRes.count,
+                  memories: allRes.memories?.map((m: any) => ({
+                    id: m.id,
+                    overview: m.overview,
+                    tags: m.tags,
+                  })),
+                });
+
+              case "filter_by_keyword":
+                if (!args.query)
+                  return JSON.stringify({ success: false, error: "query required (keyword to filter)" });
+                const kwRes = await memoryClient.filterMemoriesByKeyword(
+                  tags.project.tag,
+                  args.query,
+                  args.scope ?? CONFIG.memory.defaultScope
+                );
+                if (!kwRes.success)
+                  return JSON.stringify({ success: false, error: kwRes.error });
+                return wrapLargeOutput("filter_by_keyword", {
+                  success: true,
+                  count: kwRes.count,
+                  memories: kwRes.memories?.map((m: any) => ({
+                    id: m.id,
+                    overview: m.overview,
+                    tags: m.tags,
+                  })),
+                });
+
+              case "pick":
+                if (!args.memoryId)
+                  return JSON.stringify({ success: false, error: "memoryId required" });
+                const pickRes = await memoryClient.getMemoryContent(args.memoryId);
+                return wrapLargeOutput("pick", pickRes);
 
               case "forget":
                 if (!args.memoryId)

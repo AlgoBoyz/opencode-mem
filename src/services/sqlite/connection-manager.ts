@@ -23,10 +23,12 @@ export class ConnectionManager {
   private migrateSchema(db: typeof Database.prototype): void {
     try {
       const columns = db.prepare("PRAGMA table_info(memories)").all() as any[];
-      const hasTags = columns.some((c) => c.name === "tags");
 
-      if (!hasTags && columns.length > 0) {
+      if (!columns.some((c) => c.name === "tags") && columns.length > 0) {
         db.run("ALTER TABLE memories ADD COLUMN tags TEXT");
+      }
+      if (!columns.some((c) => c.name === "overview") && columns.length > 0) {
+        db.run("ALTER TABLE memories ADD COLUMN overview TEXT");
       }
     } catch (error) {
       log("Schema migration error", { error: String(error) });

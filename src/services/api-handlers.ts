@@ -24,6 +24,7 @@ interface Memory {
   updatedAt?: string;
   metadata?: Record<string, unknown>;
   displayName?: string;
+  overview?: string;
   userName?: string;
   userEmail?: string;
   projectPath?: string;
@@ -36,6 +37,7 @@ interface TagInfo {
   tag: string;
   tags?: string[];
   displayName?: string;
+  overview?: string;
   userName?: string;
   userEmail?: string;
   projectPath?: string;
@@ -304,6 +306,7 @@ export async function handleAddMemory(data: {
   type?: MemoryType;
   tags?: string[];
   displayName?: string;
+  overview?: string;
   userName?: string;
   userEmail?: string;
   projectPath?: string;
@@ -329,7 +332,7 @@ export async function handleAddMemory(data: {
 
     const shard = shardManager.getWriteShard(scope, hash);
 
-    const id = `mem_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+    const id = `mem_${Math.floor(Date.now() / 1000)}_${Math.random().toString(36).substring(2, 7)}`;
     const now = Date.now();
 
     const record = {
@@ -343,6 +346,7 @@ export async function handleAddMemory(data: {
       createdAt: now,
       updatedAt: now,
       displayName: data.displayName,
+      overview: data.overview,
       userName: data.userName,
       userEmail: data.userEmail,
       projectPath: data.projectPath,
@@ -357,8 +361,8 @@ export async function handleAddMemory(data: {
       const insertStmt = db.prepare(`
         INSERT INTO memories (
           id, content, vector, tags_vector, container_tag, tags, type, created_at, updated_at,
-          metadata, display_name, user_name, user_email, project_path, project_name, git_repo_url
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          metadata, display_name, overview, user_name, user_email, project_path, project_name, git_repo_url
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       insertStmt.run(
         record.id,
@@ -372,6 +376,7 @@ export async function handleAddMemory(data: {
         record.updatedAt,
         record.metadata || null,
         record.displayName || null,
+        record.overview || null,
         record.userName || null,
         record.userEmail || null,
         record.projectPath || null,
@@ -496,8 +501,8 @@ export async function handleUpdateMemory(
       const insertStmt = db.prepare(`
         INSERT INTO memories (
           id, content, vector, tags_vector, container_tag, tags, type, created_at, updated_at,
-          metadata, display_name, user_name, user_email, project_path, project_name, git_repo_url
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          metadata, display_name, overview, user_name, user_email, project_path, project_name, git_repo_url
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       insertStmt.run(
         id,
@@ -511,6 +516,7 @@ export async function handleUpdateMemory(
         Date.now(),
         existingMemory.metadata,
         existingMemory.display_name,
+        existingMemory.overview,
         existingMemory.user_name,
         existingMemory.user_email,
         existingMemory.project_path,
@@ -561,6 +567,7 @@ interface FormattedMemory {
   similarity?: number;
   metadata?: Record<string, unknown>;
   displayName?: string;
+  overview?: string;
   userName?: string;
   userEmail?: string;
   projectPath?: string;
