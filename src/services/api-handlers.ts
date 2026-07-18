@@ -300,6 +300,19 @@ export async function handleListMemories(
   }
 }
 
+function getNextNumericId(): string {
+  let max = 0;
+  const allShards = shardManager.getAllShards("project", "");
+  for (const s of allShards) {
+    const db = connectionManager.getConnection(s.dbPath);
+    const row = db.prepare(
+      "SELECT MAX(CAST(id AS INTEGER)) as mx FROM memories WHERE id GLOB '[0-9]*'"
+    ).get() as any;
+    if (row?.mx != null && row.mx > max) max = row.mx;
+  }
+  return String(max + 1);
+}
+
 export async function handleAddMemory(data: {
   content: string;
   containerTag: string;
@@ -332,7 +345,7 @@ export async function handleAddMemory(data: {
 
     const shard = shardManager.getWriteShard(scope, hash);
 
-    const id = `mem_${Math.floor(Date.now() / 1000)}_${Math.random().toString(36).substring(2, 7)}`;
+    const id = getNextNumericId();
     const now = Date.now();
 
     const record = {
