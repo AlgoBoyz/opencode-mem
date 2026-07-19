@@ -93,7 +93,23 @@ function wrapLargeOutput(mode: string, obj: any): string {
   });
 }
 
-const STANDARD_TAGS = ["rule", "resource", "operation-log", "information", "errors", "amend"];
+import { readFileSync, existsSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+
+function loadStandardTags(): string[] {
+  const paths = [
+    resolve(dirname(new URL(import.meta.url).pathname), "../../standard-tags.json"),
+    "/home/pomni/code/opencode-mem/standard-tags.json",
+  ];
+  for (const p of paths) {
+    if (existsSync(p)) {
+      return JSON.parse(readFileSync(p, "utf-8"));
+    }
+  }
+  return ["rule", "resource", "operation-log", "information", "errors", "amend"];
+}
+
+const STANDARD_TAGS = loadStandardTags();
 
 export function isStructuredSummaryPromptMessage(userMessage: string): boolean {
   // This is the plugin's own structured-summary request. OpenCode echoes it
@@ -400,6 +416,7 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
           content: tool.schema.string().optional(),
           query: tool.schema.string().optional(),
           tags: tool.schema.string().optional(),
+          agent: tool.schema.string(),
           type: tool.schema.string().optional(),
           memoryId: tool.schema.string().optional(),
           limit: tool.schema.number().optional(),
@@ -410,6 +427,7 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
           content?: string;
           query?: string;
           tags?: string;
+          agent: string;
           type?: MemoryType;
           memoryId?: string;
           limit?: number;
@@ -488,11 +506,16 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
                     error: "tags required — must include at least one standard tag: rule, resource, operation-log, information, errors, amend",
                   });
                 const parsedTags = args.tags.split(",").map((t) => t.trim().toLowerCase());
-                if (!parsedTags.some((t) => STANDARD_TAGS.includes(t))) {
+                const stdCount = parsedTags.filter((t) => STANDARD_TAGS.includes(t)).length;
+                if (stdCount < 1) {
                   return JSON.stringify({
                     success: false,
-                    error: `at least one standard tag required. Standard tags: ${STANDARD_TAGS.join(", ")}`,
+                    error: `at least one standard tag required (found ${stdCount}). Standard tags: ${STANDARD_TAGS.join(", ")}`,
                   });
+                }
+                const agentTag = `agent-${args.agent.toLowerCase().trim()}`;
+                if (!parsedTags.includes(agentTag)) {
+                  parsedTags.push(agentTag);
                 }
                 const sanitizedContent = stripPrivateContent(args.content);
                 if (isFullyPrivate(args.content))
