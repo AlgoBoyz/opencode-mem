@@ -93,6 +93,8 @@ function wrapLargeOutput(mode: string, obj: any): string {
   });
 }
 
+const STANDARD_TAGS = ["rule", "resource", "operation-log", "information", "errors", "amend"];
+
 export function isStructuredSummaryPromptMessage(userMessage: string): boolean {
   // This is the plugin's own structured-summary request. OpenCode echoes it
   // through chat.message like a normal user message, but capturing it would
@@ -480,13 +482,22 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
               case "add":
                 if (!args.content)
                   return JSON.stringify({ success: false, error: "content required" });
+                if (!args.tags)
+                  return JSON.stringify({
+                    success: false,
+                    error: "tags required — must include at least one standard tag: rule, resource, operation-log, information, errors, amend",
+                  });
+                const parsedTags = args.tags.split(",").map((t) => t.trim().toLowerCase());
+                if (!parsedTags.some((t) => STANDARD_TAGS.includes(t))) {
+                  return JSON.stringify({
+                    success: false,
+                    error: `at least one standard tag required. Standard tags: ${STANDARD_TAGS.join(", ")}`,
+                  });
+                }
                 const sanitizedContent = stripPrivateContent(args.content);
                 if (isFullyPrivate(args.content))
                   return JSON.stringify({ success: false, error: "Private content blocked" });
                 const tagInfo = tags.project;
-                const parsedTags = args.tags
-                  ? args.tags.split(",").map((t) => t.trim().toLowerCase())
-                  : undefined;
                 const result = await memoryClient.addMemory(sanitizedContent, tagInfo.tag, {
                   type: args.type,
                   tags: parsedTags,
