@@ -261,74 +261,56 @@ export class VectorSearch {
     }
   }
 
-  listMemories(db: DatabaseType, containerTag: string, limit: number): any[] {
+  listMemories(db: DatabaseType, containerTag: string, limit: number, order: "ASC" | "DESC" = "DESC"): any[] {
+    if (containerTag === "") {
+      const stmt = db.prepare(`SELECT * FROM memories ORDER BY created_at ${order} LIMIT ?`);
+      return stmt.all(limit) as any[];
+    }
     const stmt = db.prepare(
-      containerTag === ""
-        ? `
-      SELECT * FROM memories
-      ORDER BY created_at DESC
-      LIMIT ?
-    `
-        : `
-      SELECT * FROM memories
-      WHERE container_tag = ?
-      ORDER BY created_at DESC
-      LIMIT ?
-    `
+      `SELECT * FROM memories WHERE container_tag = ? ORDER BY created_at ${order} LIMIT ?`
     );
-
-    return (containerTag === "" ? stmt.all(limit) : stmt.all(containerTag, limit)) as any[];
+    return stmt.all(containerTag, limit) as any[];
   }
 
-  listByTag(db: DatabaseType, containerTag: string, tag: string, limit: number): any[] {
+  listByTag(db: DatabaseType, containerTag: string, tag: string, limit: number, order: "ASC" | "DESC" = "DESC"): any[] {
     const tagPattern = `%,${tag},%`;
-    const stmt = db.prepare(
-      containerTag === ""
-        ? `
-      SELECT * FROM memories
-      WHERE ',' || IFNULL(tags, '') || ',' LIKE ?
-      ORDER BY created_at DESC
-      LIMIT ?
-    `
-        : `
-      SELECT * FROM memories
-      WHERE container_tag = ? AND ',' || IFNULL(tags, '') || ',' LIKE ?
-      ORDER BY created_at DESC
-      LIMIT ?
-    `
-    );
-
     if (containerTag === "") {
+      const stmt = db.prepare(
+        `SELECT * FROM memories WHERE ',' || IFNULL(tags, '') || ',' LIKE ? ORDER BY created_at ${order} LIMIT ?`
+      );
       return stmt.all(tagPattern, limit) as any[];
     }
+    const stmt = db.prepare(
+      `SELECT * FROM memories WHERE container_tag = ? AND ',' || IFNULL(tags, '') || ',' LIKE ? ORDER BY created_at ${order} LIMIT ?`
+    );
     return stmt.all(containerTag, tagPattern, limit) as any[];
   }
 
-  getAllMemories(db: DatabaseType): any[] {
-    const stmt = db.prepare(`SELECT * FROM memories ORDER BY created_at DESC`);
+  getAllMemories(db: DatabaseType, order: "ASC" | "DESC" = "DESC"): any[] {
+    const stmt = db.prepare(`SELECT * FROM memories ORDER BY created_at ${order}`);
     return stmt.all() as any[];
   }
 
-  listAll(db: DatabaseType, containerTag: string): any[] {
+  listAll(db: DatabaseType, containerTag: string, order: "ASC" | "DESC" = "DESC"): any[] {
     if (containerTag === "") {
-      return this.getAllMemories(db);
+      return this.getAllMemories(db, order);
     }
     const stmt = db.prepare(
-      `SELECT * FROM memories WHERE container_tag = ? ORDER BY created_at DESC`
+      `SELECT * FROM memories WHERE container_tag = ? ORDER BY created_at ${order}`
     );
     return stmt.all(containerTag) as any[];
   }
 
-  filterByKeyword(db: DatabaseType, containerTag: string, keyword: string): any[] {
+  filterByKeyword(db: DatabaseType, containerTag: string, keyword: string, order: "ASC" | "DESC" = "DESC"): any[] {
     const pattern = `%${keyword}%`;
     if (containerTag === "") {
       const stmt = db.prepare(
-        `SELECT * FROM memories WHERE content LIKE ? ORDER BY created_at DESC`
+        `SELECT * FROM memories WHERE content LIKE ? ORDER BY created_at ${order}`
       );
       return stmt.all(pattern) as any[];
     }
     const stmt = db.prepare(
-      `SELECT * FROM memories WHERE container_tag = ? AND content LIKE ? ORDER BY created_at DESC`
+      `SELECT * FROM memories WHERE container_tag = ? AND content LIKE ? ORDER BY created_at ${order}`
     );
     return stmt.all(containerTag, pattern) as any[];
   }

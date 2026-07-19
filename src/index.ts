@@ -421,6 +421,7 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
           memoryId: tool.schema.string().optional(),
           limit: tool.schema.number().optional(),
           scope: tool.schema.enum(["project", "all-projects"]).optional(),
+          order: tool.schema.enum(["desc", "asc"]).optional(),
         },
         async execute(args: {
           mode?: "add" | "search" | "profile" | "list" | "forget" | "help" | "filter_by_tag" | "list_all" | "filter_by_keyword" | "pick";
@@ -432,6 +433,7 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
           memoryId?: string;
           limit?: number;
           scope?: MemoryScope;
+          order?: "asc" | "desc";
         }) {
           if (!isConfigured()) {
             return JSON.stringify({
@@ -664,7 +666,8 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
                 const listRes = await memoryClient.listMemories(
                   tags.project.tag,
                   args.limit || 20,
-                  args.scope ?? CONFIG.memory.defaultScope
+                  args.scope ?? CONFIG.memory.defaultScope,
+                  args.order || "desc"
                 );
                 if (!listRes.success)
                   return JSON.stringify({ success: false, error: listRes.error });
@@ -684,7 +687,8 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
                   tags.project.tag,
                   args.tags.toLowerCase().trim(),
                   args.limit || 100,
-                  args.scope ?? CONFIG.memory.defaultScope
+                  args.scope ?? CONFIG.memory.defaultScope,
+                  args.order || "desc"
                 );
                 if (!byTagRes.success)
                   return JSON.stringify({ success: false, error: byTagRes.error });
@@ -702,7 +706,8 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
               case "list_all":
                 const allRes = await memoryClient.listAllMemories(
                   tags.project.tag,
-                  args.scope ?? CONFIG.memory.defaultScope
+                  args.scope ?? CONFIG.memory.defaultScope,
+                  args.order || "desc"
                 );
                 if (!allRes.success)
                   return JSON.stringify({ success: false, error: allRes.error });
@@ -722,7 +727,8 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
                 const kwRes = await memoryClient.filterMemoriesByKeyword(
                   tags.project.tag,
                   args.query,
-                  args.scope ?? CONFIG.memory.defaultScope
+                  args.scope ?? CONFIG.memory.defaultScope,
+                  args.order || "desc"
                 );
                 if (!kwRes.success)
                   return JSON.stringify({ success: false, error: kwRes.error });

@@ -418,7 +418,7 @@ export class LocalMemoryClient {
     }
   }
 
-  async listMemories(containerTag: string, limit = 20, scope: MemoryScope = "project") {
+  async listMemories(containerTag: string, limit = 20, scope: MemoryScope = "project", order: "asc" | "desc" = "desc") {
     try {
       await this.initialize();
 
@@ -434,18 +434,21 @@ export class LocalMemoryClient {
       }
 
       const allMemories: any[] = [];
+      const sqlOrder = order === "asc" ? "ASC" as const : "DESC" as const;
 
       for (const shard of shards) {
         const db = connectionManager.getConnection(shard.dbPath);
         const memories = vectorSearch.listMemories(
           db,
           scope === "all-projects" ? "" : containerTag,
-          limit
+          limit,
+          sqlOrder
         );
         allMemories.push(...memories);
       }
 
-      allMemories.sort((a, b) => Number(b.created_at) - Number(a.created_at));
+      const multiplier = order === "asc" ? 1 : -1;
+      allMemories.sort((a, b) => multiplier * (Number(a.created_at) - Number(b.created_at)));
 
       const memories = allMemories.slice(0, limit).map((r: any) => ({
         id: r.id,
@@ -481,7 +484,8 @@ export class LocalMemoryClient {
     containerTag: string,
     tag: string,
     limit = 100,
-    scope: MemoryScope = "project"
+    scope: MemoryScope = "project",
+    order: "asc" | "desc" = "desc"
   ) {
     try {
       await this.initialize();
@@ -498,6 +502,7 @@ export class LocalMemoryClient {
       }
 
       const allMemories: any[] = [];
+      const sqlOrder = order === "asc" ? "ASC" as const : "DESC" as const;
 
       for (const shard of shards) {
         const db = connectionManager.getConnection(shard.dbPath);
@@ -505,12 +510,14 @@ export class LocalMemoryClient {
           db,
           scope === "all-projects" ? "" : containerTag,
           tag,
-          limit
+          limit,
+          sqlOrder
         );
         allMemories.push(...memories);
       }
 
-      allMemories.sort((a, b) => Number(b.created_at) - Number(a.created_at));
+      const multiplier = order === "asc" ? 1 : -1;
+      allMemories.sort((a, b) => multiplier * (Number(a.created_at) - Number(b.created_at)));
 
       const memories = allMemories.slice(0, limit).map((r: any) => ({
         id: r.id,
@@ -537,7 +544,7 @@ export class LocalMemoryClient {
     }
   }
 
-  async listAllMemories(containerTag: string, scope: MemoryScope = "project") {
+  async listAllMemories(containerTag: string, scope: MemoryScope = "project", order: "asc" | "desc" = "desc") {
     try {
       await this.initialize();
 
@@ -552,17 +559,20 @@ export class LocalMemoryClient {
       }
 
       const allMemories: any[] = [];
+      const sqlOrder = order === "asc" ? "ASC" as const : "DESC" as const;
 
       for (const shard of shards) {
         const db = connectionManager.getConnection(shard.dbPath);
         const memories = vectorSearch.listAll(
           db,
-          scope === "all-projects" ? "" : containerTag
+          scope === "all-projects" ? "" : containerTag,
+          sqlOrder
         );
         allMemories.push(...memories);
       }
 
-      allMemories.sort((a, b) => Number(b.created_at) - Number(a.created_at));
+      const multiplier = order === "asc" ? 1 : -1;
+      allMemories.sort((a, b) => multiplier * (Number(a.created_at) - Number(b.created_at)));
 
       const memories = allMemories.map((r: any) => ({
         id: r.id,
@@ -591,7 +601,8 @@ export class LocalMemoryClient {
   async filterMemoriesByKeyword(
     containerTag: string,
     keyword: string,
-    scope: MemoryScope = "project"
+    scope: MemoryScope = "project",
+    order: "asc" | "desc" = "desc"
   ) {
     try {
       await this.initialize();
@@ -604,17 +615,20 @@ export class LocalMemoryClient {
       }
 
       const allMemories: any[] = [];
+      const sqlOrder = order === "asc" ? "ASC" as const : "DESC" as const;
       for (const shard of shards) {
         const db = connectionManager.getConnection(shard.dbPath);
         const memories = vectorSearch.filterByKeyword(
           db,
           scope === "all-projects" ? "" : containerTag,
-          keyword
+          keyword,
+          sqlOrder
         );
         allMemories.push(...memories);
       }
 
-      allMemories.sort((a, b) => Number(b.created_at) - Number(a.created_at));
+      const multiplier = order === "asc" ? 1 : -1;
+      allMemories.sort((a, b) => multiplier * (Number(a.created_at) - Number(b.created_at)));
 
       const memories = allMemories.map((r: any) => ({
         id: r.id,
