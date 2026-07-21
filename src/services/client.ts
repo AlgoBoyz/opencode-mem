@@ -235,7 +235,7 @@ export class LocalMemoryClient {
 
       const results = Array.from(merged.values())
         .sort((a, b) => b.similarity - a.similarity)
-        .slice(0, limit);
+        .slice(0, limit <= 0 ? Infinity : limit);
 
       return { success: true as const, results, count: results.length };
     } catch (error) {

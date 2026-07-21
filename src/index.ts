@@ -546,7 +546,7 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
                 const combinedRes = await memoryClient.combinedSearch(
                   args.query,
                   tags.project.tag,
-                  args.limit || 10,
+                  args.limit ?? 10,
                   args.scope ?? CONFIG.memory.defaultScope
                 );
                 if (!combinedRes.success)
