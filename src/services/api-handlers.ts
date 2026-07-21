@@ -320,6 +320,7 @@ export async function handleAddMemory(data: {
   tags?: string[];
   displayName?: string;
   overview?: string;
+  agent?: string;
   userName?: string;
   userEmail?: string;
   projectPath?: string;
@@ -360,6 +361,7 @@ export async function handleAddMemory(data: {
       updatedAt: now,
       displayName: data.displayName,
       overview: data.overview,
+      agent: data.agent,
       userName: data.userName,
       userEmail: data.userEmail,
       projectPath: data.projectPath,
@@ -374,8 +376,8 @@ export async function handleAddMemory(data: {
       const insertStmt = db.prepare(`
         INSERT INTO memories (
           id, content, vector, tags_vector, container_tag, tags, type, created_at, updated_at,
-          metadata, display_name, overview, user_name, user_email, project_path, project_name, git_repo_url
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          metadata, display_name, overview, agent, user_name, user_email, project_path, project_name, git_repo_url
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       insertStmt.run(
         record.id,
@@ -390,6 +392,7 @@ export async function handleAddMemory(data: {
         record.metadata || null,
         record.displayName || null,
         record.overview || null,
+        record.agent || null,
         record.userName || null,
         record.userEmail || null,
         record.projectPath || null,
@@ -514,8 +517,8 @@ export async function handleUpdateMemory(
       const insertStmt = db.prepare(`
         INSERT INTO memories (
           id, content, vector, tags_vector, container_tag, tags, type, created_at, updated_at,
-          metadata, display_name, overview, user_name, user_email, project_path, project_name, git_repo_url
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          metadata, display_name, overview, agent, user_name, user_email, project_path, project_name, git_repo_url
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       insertStmt.run(
         id,
@@ -530,6 +533,7 @@ export async function handleUpdateMemory(
         existingMemory.metadata,
         existingMemory.display_name,
         existingMemory.overview,
+        existingMemory.agent,
         existingMemory.user_name,
         existingMemory.user_email,
         existingMemory.project_path,

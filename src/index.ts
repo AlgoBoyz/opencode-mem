@@ -93,7 +93,7 @@ function wrapLargeOutput(mode: string, obj: any): string {
   });
 }
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 
 function loadStandardTags(): string[] {
@@ -110,6 +110,17 @@ function loadStandardTags(): string[] {
 }
 
 const STANDARD_TAGS = loadStandardTags();
+
+function getValidAgents(): string[] {
+  const agents = ["main"];
+  const agentDir = "/home/pomni/.config/opencode/agents";
+  if (existsSync(agentDir)) {
+    for (const f of readdirSync(agentDir)) {
+      if (f.endsWith(".md")) agents.push(f.replace(/\.md$/, ""));
+    }
+  }
+  return agents;
+}
 
 export function isStructuredSummaryPromptMessage(userMessage: string): boolean {
   // This is the plugin's own structured-summary request. OpenCode echoes it
@@ -416,7 +427,7 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
           content: tool.schema.string().optional(),
           query: tool.schema.string().optional(),
           tags: tool.schema.string().optional(),
-          agent: tool.schema.string(),
+          agent: tool.schema.string().optional(),
           type: tool.schema.string().optional(),
           memoryId: tool.schema.string().optional(),
           replacedBy: tool.schema.string().optional(),
@@ -429,7 +440,7 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
           content?: string;
           query?: string;
           tags?: string;
-          agent: string;
+          agent?: string;
           type?: MemoryType;
           memoryId?: string;
           replacedBy?: string;
@@ -522,7 +533,20 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
                     error: `at least one standard tag required (found ${stdCount}). Standard tags: ${STANDARD_TAGS.join(", ")}`,
                   });
                 }
-                const agentTag = `agent-${args.agent.toLowerCase().trim()}`;
+                if (!args.agent)
+                  return JSON.stringify({
+                    success: false,
+                    error: "agent required (e.g. 'main', 'ssh', 'debug')",
+                  });
+                const validAgents = getValidAgents();
+                const agentValue = args.agent.toLowerCase().trim();
+                if (!validAgents.includes(agentValue)) {
+                  return JSON.stringify({
+                    success: false,
+                    error: `invalid agent '${agentValue}'. Valid agents: ${validAgents.join(", ")}`,
+                  });
+                }
+                const agentTag = `agent-${agentValue}`;
                 if (!parsedTags.includes(agentTag)) {
                   parsedTags.push(agentTag);
                 }
@@ -535,6 +559,7 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
                   tags: parsedTags,
                   displayName: generateDisplayName(sanitizedContent),
                   overview: (await generateAIOverview(sanitizedContent)) || generateOverview(sanitizedContent),
+                  agent: args.agent.toLowerCase().trim(),
                   userName: tagInfo.userName,
                   userEmail: tagInfo.userEmail,
                   projectPath: tagInfo.projectPath,
@@ -554,7 +579,8 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
                   args.query,
                   tags.project.tag,
                   args.limit ?? 10,
-                  args.scope ?? CONFIG.memory.defaultScope
+                  args.scope ?? CONFIG.memory.defaultScope,
+                  args.agent
                 );
                 if (!combinedRes.success)
                   return JSON.stringify({ success: false, error: combinedRes.error });
@@ -674,7 +700,8 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
                   tags.project.tag,
                   args.limit || 20,
                   args.scope ?? CONFIG.memory.defaultScope,
-                  args.order || "desc"
+                  args.order || "desc",
+                  args.agent
                 );
                 if (!listRes.success)
                   return JSON.stringify({ success: false, error: listRes.error });
@@ -695,7 +722,8 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
                   args.tags.toLowerCase().trim(),
                   args.limit || 100,
                   args.scope ?? CONFIG.memory.defaultScope,
-                  args.order || "desc"
+                  args.order || "desc",
+                  args.agent
                 );
                 if (!byTagRes.success)
                   return JSON.stringify({ success: false, error: byTagRes.error });
@@ -714,7 +742,8 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
                 const allRes = await memoryClient.listAllMemories(
                   tags.project.tag,
                   args.scope ?? CONFIG.memory.defaultScope,
-                  args.order || "desc"
+                  args.order || "desc",
+                  args.agent
                 );
                 if (!allRes.success)
                   return JSON.stringify({ success: false, error: allRes.error });
@@ -735,7 +764,8 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
                   tags.project.tag,
                   args.query,
                   args.scope ?? CONFIG.memory.defaultScope,
-                  args.order || "desc"
+                  args.order || "desc",
+                  args.agent
                 );
                 if (!kwRes.success)
                   return JSON.stringify({ success: false, error: kwRes.error });

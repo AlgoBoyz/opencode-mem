@@ -33,8 +33,8 @@ export class VectorSearch {
     const insertMemory = db.prepare(`
       INSERT INTO memories (
         id, content, vector, tags_vector, container_tag, tags, type, created_at, updated_at,
-        metadata, display_name, overview, user_name, user_email, project_path, project_name, git_repo_url
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        metadata, display_name, overview, agent, user_name, user_email, project_path, project_name, git_repo_url
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     insertMemory.run(
@@ -50,6 +50,7 @@ export class VectorSearch {
       record.metadata || null,
       record.displayName || null,
       record.overview || null,
+      record.agent || null,
       record.userName || null,
       record.userEmail || null,
       record.projectPath || null,
@@ -261,58 +262,57 @@ export class VectorSearch {
     }
   }
 
-  listMemories(db: DatabaseType, containerTag: string, limit: number, order: "ASC" | "DESC" = "DESC"): any[] {
-    if (containerTag === "") {
-      const stmt = db.prepare(`SELECT * FROM memories ORDER BY created_at ${order} LIMIT ?`);
-      return stmt.all(limit) as any[];
-    }
-    const stmt = db.prepare(
-      `SELECT * FROM memories WHERE container_tag = ? ORDER BY created_at ${order} LIMIT ?`
-    );
-    return stmt.all(containerTag, limit) as any[];
+  listMemories(db: DatabaseType, containerTag: string, limit: number, order: "ASC" | "DESC" = "DESC", agent?: string): any[] {
+    const agentClause = agent ? " AND agent = ?" : "";
+    const params: any[] = [];
+    let where = "";
+    if (containerTag !== "") { where = " WHERE container_tag = ?"; params.push(containerTag); }
+    if (agent) { where = where ? where + agentClause : " WHERE agent = ?"; params.push(agent); }
+    const stmt = db.prepare(`SELECT * FROM memories${where} ORDER BY created_at ${order} LIMIT ?`);
+    return stmt.all(...params, limit) as any[];
   }
 
-  listByTag(db: DatabaseType, containerTag: string, tag: string, limit: number, order: "ASC" | "DESC" = "DESC"): any[] {
+  listByTag(db: DatabaseType, containerTag: string, tag: string, limit: number, order: "ASC" | "DESC" = "DESC", agent?: string): any[] {
     const tagPattern = `%,${tag},%`;
-    if (containerTag === "") {
-      const stmt = db.prepare(
-        `SELECT * FROM memories WHERE ',' || IFNULL(tags, '') || ',' LIKE ? ORDER BY created_at ${order} LIMIT ?`
-      );
-      return stmt.all(tagPattern, limit) as any[];
-    }
-    const stmt = db.prepare(
-      `SELECT * FROM memories WHERE container_tag = ? AND ',' || IFNULL(tags, '') || ',' LIKE ? ORDER BY created_at ${order} LIMIT ?`
-    );
-    return stmt.all(containerTag, tagPattern, limit) as any[];
+    const conditions = [];
+    const params: any[] = [];
+    if (containerTag !== "") { conditions.push("container_tag = ?"); params.push(containerTag); }
+    conditions.push("',' || IFNULL(tags, '') || ',' LIKE ?"); params.push(tagPattern);
+    if (agent) { conditions.push("agent = ?"); params.push(agent); }
+    const stmt = db.prepare(`SELECT * FROM memories WHERE ${conditions.join(" AND ")} ORDER BY created_at ${order} LIMIT ?`);
+    return stmt.all(...params, limit) as any[];
   }
 
-  getAllMemories(db: DatabaseType, order: "ASC" | "DESC" = "DESC"): any[] {
+  getAllMemories(db: DatabaseType, order: "ASC" | "DESC" = "DESC", agent?: string): any[] {
+    if (agent) {
+      const stmt = db.prepare(`SELECT * FROM memories WHERE agent = ? ORDER BY created_at ${order}`);
+      return stmt.all(agent) as any[];
+    }
     const stmt = db.prepare(`SELECT * FROM memories ORDER BY created_at ${order}`);
     return stmt.all() as any[];
   }
 
-  listAll(db: DatabaseType, containerTag: string, order: "ASC" | "DESC" = "DESC"): any[] {
+  listAll(db: DatabaseType, containerTag: string, order: "ASC" | "DESC" = "DESC", agent?: string): any[] {
     if (containerTag === "") {
-      return this.getAllMemories(db, order);
+      return this.getAllMemories(db, order, agent);
     }
-    const stmt = db.prepare(
-      `SELECT * FROM memories WHERE container_tag = ? ORDER BY created_at ${order}`
-    );
+    if (agent) {
+      const stmt = db.prepare(`SELECT * FROM memories WHERE container_tag = ? AND agent = ? ORDER BY created_at ${order}`);
+      return stmt.all(containerTag, agent) as any[];
+    }
+    const stmt = db.prepare(`SELECT * FROM memories WHERE container_tag = ? ORDER BY created_at ${order}`);
     return stmt.all(containerTag) as any[];
   }
 
-  filterByKeyword(db: DatabaseType, containerTag: string, keyword: string, order: "ASC" | "DESC" = "DESC"): any[] {
+  filterByKeyword(db: DatabaseType, containerTag: string, keyword: string, order: "ASC" | "DESC" = "DESC", agent?: string): any[] {
     const pattern = `%${keyword}%`;
-    if (containerTag === "") {
-      const stmt = db.prepare(
-        `SELECT * FROM memories WHERE content LIKE ? ORDER BY created_at ${order}`
-      );
-      return stmt.all(pattern) as any[];
-    }
-    const stmt = db.prepare(
-      `SELECT * FROM memories WHERE container_tag = ? AND content LIKE ? ORDER BY created_at ${order}`
-    );
-    return stmt.all(containerTag, pattern) as any[];
+    const conditions = [];
+    const params: any[] = [];
+    if (containerTag !== "") { conditions.push("container_tag = ?"); params.push(containerTag); }
+    conditions.push("content LIKE ?"); params.push(pattern);
+    if (agent) { conditions.push("agent = ?"); params.push(agent); }
+    const stmt = db.prepare(`SELECT * FROM memories WHERE ${conditions.join(" AND ")} ORDER BY created_at ${order}`);
+    return stmt.all(...params) as any[];
   }
 
   getMemoryById(db: DatabaseType, memoryId: string): any | null {

@@ -22,6 +22,7 @@ export interface MemoryRecord {
   metadata?: string;
   displayName?: string;
   overview?: string;
+  agent?: string;
   userName?: string;
   userEmail?: string;
   projectPath?: string;
@@ -37,6 +38,7 @@ export interface SearchResult {
   metadata?: Record<string, unknown>;
   displayName?: string;
   overview?: string;
+  agent?: string;
   userName?: string;
   userEmail?: string;
   projectPath?: string;

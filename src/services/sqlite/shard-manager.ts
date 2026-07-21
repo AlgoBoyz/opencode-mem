@@ -166,6 +166,7 @@ export class ShardManager {
         metadata TEXT,
         display_name TEXT,
         overview TEXT,
+        agent TEXT,
         user_name TEXT,
         user_email TEXT,
         project_path TEXT,

@@ -145,7 +145,8 @@ export class LocalMemoryClient {
     query: string,
     containerTag: string,
     limit: number = 10,
-    scope: MemoryScope = "project"
+    scope: MemoryScope = "project",
+    agent?: string
   ) {
     try {
       await this.initialize();
@@ -169,7 +170,7 @@ export class LocalMemoryClient {
       for (const kw of keywords) {
         const [semanticRes, keywordRes] = await Promise.all([
           this.searchMemories(kw, containerTag, scope),
-          this.filterMemoriesByKeyword(containerTag, kw, scope),
+          this.filterMemoriesByKeyword(containerTag, kw, scope, "desc", agent),
         ]);
 
         if (semanticRes.success) {
@@ -271,6 +272,7 @@ export class LocalMemoryClient {
       captureTimestamp?: number;
       displayName?: string;
       overview?: string;
+      agent?: string;
       userName?: string;
       userEmail?: string;
       projectPath?: string;
@@ -305,6 +307,7 @@ export class LocalMemoryClient {
       const {
         displayName,
         overview,
+        agent,
         userName,
         userEmail,
         projectPath,
@@ -327,6 +330,7 @@ export class LocalMemoryClient {
         updatedAt: now,
         displayName,
         overview,
+        agent,
         userName,
         userEmail,
         projectPath,
@@ -343,8 +347,8 @@ export class LocalMemoryClient {
         const insertStmt = db.prepare(`
           INSERT INTO memories (
             id, content, vector, tags_vector, container_tag, tags, type, created_at, updated_at,
-            metadata, display_name, overview, user_name, user_email, project_path, project_name, git_repo_url
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            metadata, display_name, overview, agent, user_name, user_email, project_path, project_name, git_repo_url
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         insertStmt.run(
           record.id,
@@ -359,6 +363,7 @@ export class LocalMemoryClient {
           record.metadata || null,
           record.displayName || null,
           record.overview || null,
+          record.agent || null,
           record.userName || null,
           record.userEmail || null,
           record.projectPath || null,
@@ -418,7 +423,7 @@ export class LocalMemoryClient {
     }
   }
 
-  async listMemories(containerTag: string, limit = 20, scope: MemoryScope = "project", order: "asc" | "desc" = "desc") {
+  async listMemories(containerTag: string, limit = 20, scope: MemoryScope = "project", order: "asc" | "desc" = "desc", agent?: string) {
     try {
       await this.initialize();
 
@@ -442,7 +447,8 @@ export class LocalMemoryClient {
           db,
           scope === "all-projects" ? "" : containerTag,
           limit,
-          sqlOrder
+          sqlOrder,
+          agent
         );
         allMemories.push(...memories);
       }
@@ -485,7 +491,8 @@ export class LocalMemoryClient {
     tag: string,
     limit = 100,
     scope: MemoryScope = "project",
-    order: "asc" | "desc" = "desc"
+    order: "asc" | "desc" = "desc",
+    agent?: string
   ) {
     try {
       await this.initialize();
@@ -511,7 +518,8 @@ export class LocalMemoryClient {
           scope === "all-projects" ? "" : containerTag,
           tag,
           limit,
-          sqlOrder
+          sqlOrder,
+          agent
         );
         allMemories.push(...memories);
       }
@@ -544,7 +552,7 @@ export class LocalMemoryClient {
     }
   }
 
-  async listAllMemories(containerTag: string, scope: MemoryScope = "project", order: "asc" | "desc" = "desc") {
+  async listAllMemories(containerTag: string, scope: MemoryScope = "project", order: "asc" | "desc" = "desc", agent?: string) {
     try {
       await this.initialize();
 
@@ -566,7 +574,8 @@ export class LocalMemoryClient {
         const memories = vectorSearch.listAll(
           db,
           scope === "all-projects" ? "" : containerTag,
-          sqlOrder
+          sqlOrder,
+          agent
         );
         allMemories.push(...memories);
       }
@@ -602,7 +611,8 @@ export class LocalMemoryClient {
     containerTag: string,
     keyword: string,
     scope: MemoryScope = "project",
-    order: "asc" | "desc" = "desc"
+    order: "asc" | "desc" = "desc",
+    agent?: string
   ) {
     try {
       await this.initialize();
@@ -622,7 +632,8 @@ export class LocalMemoryClient {
           db,
           scope === "all-projects" ? "" : containerTag,
           keyword,
-          sqlOrder
+          sqlOrder,
+          agent
         );
         allMemories.push(...memories);
       }

@@ -30,6 +30,9 @@ export class ConnectionManager {
       if (!columns.some((c) => c.name === "overview") && columns.length > 0) {
         db.run("ALTER TABLE memories ADD COLUMN overview TEXT");
       }
+      if (!columns.some((c) => c.name === "agent") && columns.length > 0) {
+        db.run("ALTER TABLE memories ADD COLUMN agent TEXT");
+      }
     } catch (error) {
       log("Schema migration error", { error: String(error) });
     }
