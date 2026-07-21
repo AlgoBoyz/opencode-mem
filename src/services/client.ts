@@ -41,6 +41,10 @@ function toBlob(vector?: Float32Array): Uint8Array | null {
   return vector ? new Uint8Array(vector.buffer) : null;
 }
 
+function isDeprecated(overview?: string): boolean {
+  return !!overview && overview.startsWith("[弃用]");
+}
+
 function extractScopeFromContainerTag(containerTag: string): {
   scope: "user" | "project";
   hash: string;
@@ -462,6 +466,7 @@ export class LocalMemoryClient {
         createdAt: safeToISOString(r.created_at),
         metadata: safeJSONParse(r.metadata),
         displayName: r.display_name,
+        isDeprecated: isDeprecated(r.overview),
         userName: r.user_name,
         userEmail: r.user_email,
         projectPath: r.project_path,
@@ -531,6 +536,7 @@ export class LocalMemoryClient {
         id: r.id,
         displayName: r.display_name,
         overview: r.overview || undefined,
+        isDeprecated: isDeprecated(r.overview),
         tags: r.tags ? r.tags.split(",").map((t: string) => t.trim()) : [],
         createdAt: safeToISOString(r.created_at),
       }));
@@ -587,6 +593,7 @@ export class LocalMemoryClient {
         id: r.id,
         displayName: r.display_name,
         overview: r.overview || undefined,
+        isDeprecated: isDeprecated(r.overview),
         tags: r.tags ? r.tags.split(",").map((t: string) => t.trim()) : [],
         createdAt: safeToISOString(r.created_at),
       }));
@@ -645,6 +652,7 @@ export class LocalMemoryClient {
         id: r.id,
         displayName: r.display_name,
         overview: r.overview || undefined,
+        isDeprecated: isDeprecated(r.overview),
         tags: r.tags ? r.tags.split(",").map((t: string) => t.trim()) : [],
         createdAt: safeToISOString(r.created_at),
       }));
