@@ -679,6 +679,39 @@ export class LocalMemoryClient {
     }
   }
 
+  async deprecateMemory(memoryId: string, replacedById: string) {
+    try {
+      await this.initialize();
+
+      const allShards = [
+        ...shardManager.getAllShards("project", ""),
+        ...shardManager.getAllShards("user", ""),
+      ];
+
+      for (const shard of allShards) {
+        const db = connectionManager.getConnection(shard.dbPath);
+        const row = vectorSearch.getMemoryById(db, memoryId);
+        if (row) {
+          const oldOverview = row.overview || "";
+          const newOverview = `[弃用] 已被 #${replacedById} 替代。${oldOverview}`;
+          db.prepare("UPDATE memories SET overview = ? WHERE id = ?").run(newOverview, memoryId);
+          return {
+            success: true as const,
+            id: memoryId,
+            replacedBy: replacedById,
+            overview: newOverview,
+          };
+        }
+      }
+
+      return { success: false as const, error: "Memory not found" };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log("deprecateMemory: error", { memoryId, error: errorMessage });
+      return { success: false as const, error: errorMessage };
+    }
+  }
+
   async searchMemoriesBySessionID(sessionID: string, containerTag: string, limit: number = 10) {
     try {
       await this.initialize();

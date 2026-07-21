@@ -412,25 +412,27 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
       memory: tool({
         description: `Manage and query project memory (MATCH USER LANGUAGE: ${getLanguageName(CONFIG.autoCaptureLanguage || "en")}). Use 'search' with technical keywords/tags, 'add' to store knowledge, 'profile' for preferences. Search/list scope: project or all-projects.`,
         args: {
-          mode: tool.schema.enum(["add", "search", "profile", "list", "forget", "help", "filter_by_tag", "list_all", "filter_by_keyword", "pick"]).optional(),
+          mode: tool.schema.enum(["add", "search", "profile", "list", "forget", "help", "filter_by_tag", "list_all", "filter_by_keyword", "pick", "deprecate"]).optional(),
           content: tool.schema.string().optional(),
           query: tool.schema.string().optional(),
           tags: tool.schema.string().optional(),
           agent: tool.schema.string(),
           type: tool.schema.string().optional(),
           memoryId: tool.schema.string().optional(),
+          replacedBy: tool.schema.string().optional(),
           limit: tool.schema.number().optional(),
           scope: tool.schema.enum(["project", "all-projects"]).optional(),
           order: tool.schema.enum(["desc", "asc"]).optional(),
         },
         async execute(args: {
-          mode?: "add" | "search" | "profile" | "list" | "forget" | "help" | "filter_by_tag" | "list_all" | "filter_by_keyword" | "pick";
+          mode?: "add" | "search" | "profile" | "list" | "forget" | "help" | "filter_by_tag" | "list_all" | "filter_by_keyword" | "pick" | "deprecate";
           content?: string;
           query?: string;
           tags?: string;
           agent: string;
           type?: MemoryType;
           memoryId?: string;
+          replacedBy?: string;
           limit?: number;
           scope?: MemoryScope;
           order?: "asc" | "desc";
@@ -493,6 +495,11 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
                       command: "pick",
                       description: "Retrieve full content of a memory by id",
                       args: ["memoryId"],
+                    },
+                    {
+                      command: "deprecate",
+                      description: "Mark a memory as deprecated, referencing its replacement",
+                      args: ["memoryId", "replacedBy"],
                     },
                     { command: "forget", description: "Remove memory", args: ["memoryId"] },
                   ],
@@ -747,6 +754,14 @@ export const OpenCodeMemPlugin: Plugin = async (ctx: PluginInput) => {
                   return JSON.stringify({ success: false, error: "memoryId required" });
                 const pickRes = await memoryClient.getMemoryContent(args.memoryId);
                 return wrapLargeOutput("pick", pickRes);
+
+              case "deprecate":
+                if (!args.memoryId)
+                  return JSON.stringify({ success: false, error: "memoryId required" });
+                if (!args.replacedBy)
+                  return JSON.stringify({ success: false, error: "replacedBy required (new memory id)" });
+                const depRes = await memoryClient.deprecateMemory(args.memoryId, args.replacedBy);
+                return JSON.stringify(depRes);
 
               case "forget":
                 if (!args.memoryId)
